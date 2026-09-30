@@ -41,6 +41,8 @@ def judge(answer: str, rubric: str, client=None) -> tuple[bool, str]:
     JUDGE_STATS["usd"] += config.cost_usd(response.usage.input_tokens, response.usage.output_tokens,
                                           config.JUDGE_MODEL)
     text = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not text:   # an empty reply is a judge failure, not a verdict. Never cache it.
+        return False, "judge returned an empty reply (not cached, rerun to re-judge)"
     ok = text.upper().startswith("PASS")
     if k:
         cache.put(k, {"ok": ok, "text": text})

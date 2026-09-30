@@ -42,6 +42,16 @@ def test_record_answer_requires_citations_unless_handed_to_human():
     assert tools.ANSWERS["q13"]["needs_human"]
 
 
+def test_record_answer_requires_every_doc_named_in_the_reason_to_be_cited():
+    reason = "security_overview_2023 says 30 days, security_overview_2025 says 90 days."
+    with pytest.raises(ValueError, match="security_overview_2023"):
+        tools.record_answer("q10", "90 days", ["security_overview_2025 / Data retention"],
+                            "high", True, reason)
+    tools.record_answer("q10", "90 days", ["security_overview_2025 / Data retention",
+                                           "security_overview_2023 / Data retention"], "high", True, reason)
+    assert "q10" in tools.ANSWERS
+
+
 def test_record_answer_rejects_bad_confidence():
     with pytest.raises(ValueError):
         tools.record_answer("q1", "Yes", ["a / b"], "certain", False, "")

@@ -56,6 +56,17 @@ def test_judge_cost_is_tracked():
     assert ok and checks.JUDGE_STATS["calls"] == 1 and checks.JUDGE_STATS["usd"] > 0
 
 
+def test_empty_judge_reply_is_reported_not_cached(tmp_path, monkeypatch):
+    from core import config
+    from evals import cache, checks
+    from tests.fakes import FakeClient, text_response
+    monkeypatch.setenv("EVAL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "get_client", lambda: FakeClient([text_response("")]))
+    ok, detail = checks.judge("answer", "rubric")
+    assert not ok and "empty reply" in detail
+    assert cache.get(cache.key("judge", config.JUDGE_MODEL, "rubric", "answer")) is None
+
+
 def test_cost_uses_the_right_price_per_model(monkeypatch):
     from core import config
     monkeypatch.delenv("PRICE_IN_PER_M", raising=False)

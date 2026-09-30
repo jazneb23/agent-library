@@ -37,7 +37,8 @@ registry = ToolRegistry([
           "properties": {"question_id": {"type": "string"},
                          "answer": {"type": "string"},
                          "citations": {"type": "array", "items": {"type": "string"},
-                                       "description": "Each as 'doc / section'"},
+                                       "description": "Each as 'doc / section'. If sources conflict, "
+                                                      "include EVERY conflicting source, old and new."},
                          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
                          "needs_human": {"type": "boolean"},
                          "reason": {"type": "string",

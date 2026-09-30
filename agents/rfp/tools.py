@@ -55,6 +55,14 @@ def record_answer(question_id: str, answer: str, citations: list[str], confidenc
     # No source, no claim: a confident answer with nothing cited is rejected.
     if not needs_human and not citations:
         raise ValueError("An answer with needs_human false must cite at least one doc and section.")
+    # Every document the reasoning leans on must be cited. The error goes back to the model, which
+    # retries with the fix. Enforced here because models skip this rule when it is only in the prompt.
+    cited = " ".join(citations).lower()
+    unlisted = sorted({c.doc for c in load_chunks(settings.DATA_DIR)
+                       if c.doc.lower() in reason.lower() and c.doc.lower() not in cited})
+    if unlisted:
+        raise ValueError(f"Your reason mentions {unlisted} but citations does not list them. "
+                         "Add each as 'doc / section' and call record_answer again.")
     ANSWERS[question_id] = {"question_id": question_id, "answer": answer, "citations": citations,
                             "confidence": confidence, "needs_human": needs_human, "reason": reason}
     return f"Recorded answer for {question_id}."
