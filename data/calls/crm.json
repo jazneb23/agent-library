@@ -1,0 +1,7 @@
+{
+  "accounts": [
+    {"account_id": "A100", "name": "Lakeshore Logistics", "stage": "Discovery", "amount": null, "close_date": null, "champion": null, "next_step": null, "competitor": null},
+    {"account_id": "A101", "name": "Cobalt Retail", "stage": "Prospecting", "amount": null, "close_date": null, "champion": null, "next_step": null, "competitor": null},
+    {"account_id": "A102", "name": "Evergreen Foods", "stage": "Discovery", "amount": null, "close_date": null, "champion": null, "next_step": null, "competitor": null}
+  ]
+}

@@ -1,0 +1,7 @@
+customer_id,name,segment,contact_name,contact_email
+C01,Northbeam Freight,mid_market,Dana Ortiz,d.ortiz@northbeam.example
+C02,Redwood Health Group,enterprise,Chris Alvarez,c.alvarez@redwoodhg.example
+C03,Tidewater Foods,mid_market,Bev Sanders,b.sanders@tidewater.example
+C04,Granite Peak Mining,enterprise,Rob Whitfield,r.whitfield@granitepeak.example
+C05,Juniper Studios,smb,Mei Tanaka,m.tanaka@juniperstudios.example
+C06,Copperline Energy,mid_market,Luis Ferreira,l.ferreira@copperline.example

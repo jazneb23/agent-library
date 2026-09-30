@@ -1,0 +1,39 @@
+{
+  "resources": [
+    {
+      "resource_id": "nat-0abc123",
+      "type": "NAT Gateway",
+      "account": "prod",
+      "owner": "platform",
+      "state": "active",
+      "note": "Handles private subnet egress. A new batch export job was deployed 2026-09-19."
+    },
+    {
+      "resource_id": "i-0gpu9f2e",
+      "type": "EC2-GPU (p4d.24xlarge)",
+      "account": "ml-research",
+      "owner": "jlee",
+      "state": "running",
+      "last_activity": "2026-09-08",
+      "cpu_avg_7d": "1 percent",
+      "note": "Launched for a training run that finished 2026-09-08. Never stopped."
+    },
+    {
+      "resource_id": "s3-prod-logs",
+      "type": "S3 bucket",
+      "account": "prod",
+      "owner": "data",
+      "state": "active",
+      "lifecycle_policy": null,
+      "note": "Application logs. No expiration or tiering rules."
+    },
+    {
+      "resource_id": "cf-prod-web",
+      "type": "CloudFront",
+      "account": "prod",
+      "owner": "web",
+      "state": "active",
+      "note": "Serves the marketing site and app assets."
+    }
+  ]
+}
