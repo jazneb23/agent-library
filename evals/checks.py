@@ -3,6 +3,7 @@ Prefer deterministic checks. Use judge_rubric only for fuzzy qualities."""
 from dataclasses import dataclass
 
 from core import config
+from evals import cache
 
 
 @dataclass
@@ -16,16 +17,40 @@ def _lower(text: str) -> str:
     return (text or "").lower()
 
 
+JUDGE_STATS = {"calls": 0, "usd": 0.0}   # grading has a cost too, so the runner reports it
+
+
+def reset_judge_stats() -> None:
+    JUDGE_STATS.update(calls=0, usd=0.0)
+
+
 def judge(answer: str, rubric: str, client=None) -> tuple[bool, str]:
     """A second model call grades the answer against a rubric. The judge can be
     wrong too, so use it sparingly and read its reasons."""
+    # Identical answer and rubric get the identical verdict for free. Skipped when a client is
+    # passed in (tests), so tests never touch the disk cache.
+    k = cache.key("judge", config.JUDGE_MODEL, rubric, answer) if client is None else None
+    if k and (hit := cache.get(k)):
+        return hit["ok"], hit["text"]
     client = client or config.get_client()
     response = client.messages.create(
         model=config.JUDGE_MODEL, max_tokens=200,
         system="You grade AI outputs. Reply with PASS or FAIL, then a colon, then one short reason.",
         messages=[{"role": "user", "content": f"Rubric: {rubric}\n\nOutput to grade:\n{answer}"}])
+    JUDGE_STATS["calls"] += 1
+    JUDGE_STATS["usd"] += config.cost_usd(response.usage.input_tokens, response.usage.output_tokens,
+                                          config.JUDGE_MODEL)
     text = "".join(b.text for b in response.content if b.type == "text").strip()
-    return text.upper().startswith("PASS"), text
+    ok = text.upper().startswith("PASS")
+    if k:
+        cache.put(k, {"ok": ok, "text": text})
+    return ok, text
+
+
+def _last_recorded_answer(result: dict) -> dict | None:
+    """The input of the agent's final record_answer call, read from the tool log."""
+    calls = [e["input"] for e in result.get("tool_events", []) if e["tool"] == "record_answer"]
+    return calls[-1] if calls else None
 
 
 def evaluate(result: dict, checks: dict, judge_fn=judge) -> list[CheckResult]:
@@ -48,6 +73,19 @@ def evaluate(result: dict, checks: dict, judge_fn=judge) -> list[CheckResult]:
     if "must_not_call_tools" in checks:
         bad = [t for t in checks["must_not_call_tools"] if t in called]
         out.append(CheckResult("must_not_call_tools", not bad, f"called forbidden {bad}" if bad else ""))
+    if "needs_human" in checks:   # did the agent route this one to a person, as expected?
+        rec = _last_recorded_answer(result)
+        if rec is None:
+            out.append(CheckResult("needs_human", False, "record_answer was never called"))
+        else:
+            got = rec.get("needs_human")
+            out.append(CheckResult("needs_human", got == checks["needs_human"],
+                                   f"expected {checks['needs_human']}, got {got}"))
+    if "cites" in checks:         # every named doc must appear in the recorded citations
+        rec = _last_recorded_answer(result)
+        cited = " | ".join(rec.get("citations", [])).lower() if rec else ""
+        missing = [d for d in checks["cites"] if d.lower() not in cited]
+        out.append(CheckResult("cites", not missing, f"not cited {missing}" if missing else ""))
     if "max_steps" in checks:
         ok = result.get("steps", 0) <= checks["max_steps"]
         out.append(CheckResult("max_steps", ok, f"{result.get('steps')} steps"))

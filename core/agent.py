@@ -19,7 +19,9 @@ def _truncate(text: str) -> str:
 
 
 def run_agent(system: str, user_message: str, registry: ToolRegistry, *,
-              client=None, max_steps: int | None = None) -> dict:
+              client=None, max_steps: int | None = None, stop_after_tool: str | None = None) -> dict:
+    """stop_after_tool: end the run as soon as this tool succeeds and use its "answer"
+    input as the final answer. It saves the last model call, which would only repeat it."""
     client = client or config.get_client()
     max_steps = max_steps or config.MAX_STEPS
     run_id = uuid.uuid4().hex[:8]
@@ -56,6 +58,7 @@ def run_agent(system: str, user_message: str, registry: ToolRegistry, *,
 
         # 4. Run every tool Claude asked for.
         results = []
+        stop_input = None
         for block in response.content:
             if block.type != "tool_use":
                 continue
@@ -79,8 +82,14 @@ def run_agent(system: str, user_message: str, registry: ToolRegistry, *,
                       output=output[:500])
             tool_events.append({"tool": block.name, "input": block.input,
                                 "output": output, "is_error": is_error})
+            if stop_after_tool and block.name == stop_after_tool and not is_error:
+                stop_input = block.input
             results.append({"type": "tool_result", "tool_use_id": block.id,
                             "content": output, "is_error": is_error})
+
+        # The stop tool worked, so the run is complete. Skip the extra model call.
+        if stop_input is not None:
+            return finish(str(stop_input.get("answer", "")), step, "stop_tool")
 
         # 5. Feed the results back and go around again.
         messages.append({"role": "user", "content": results})
