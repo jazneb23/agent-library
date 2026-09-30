@@ -12,6 +12,13 @@ def test_chunker_splits_by_heading_and_keeps_dates():
     assert all(c.updated == "2023-03-14" for c in chunks)
 
 
+def test_every_chunk_keeps_its_document_title():
+    chunks = load_chunks("data/rfp")
+    assert all(isinstance(c.title, str) and c.title for c in chunks)
+    sub = [c for c in chunks if c.doc == "subprocessors"]
+    assert {c.title for c in sub} == {"Subprocessors"}          # the table chunk knows what doc it is from
+
+
 def test_chunker_handles_faq_and_headingless_docs():
     faq = parse_doc(pathlib.Path("data/rfp/product_faq.md"))
     assert any("identity provider" in c.section for c in faq)   # bold question became a section

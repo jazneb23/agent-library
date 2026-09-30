@@ -45,8 +45,10 @@ class Retriever:
         self.collection.add(
             ids=[c.id for c in chunks],
             documents=[c.text for c in chunks],
-            embeddings=self.embedder.embed([f"{c.section}. {c.text}" for c in chunks]),
-            metadatas=[{"doc": c.doc, "section": c.section, "updated": c.updated} for c in chunks])
+            # Title and section are embedded with the text, so "Subprocessors" helps find its own table.
+            embeddings=self.embedder.embed([f"{c.title}. {c.section}. {c.text}" for c in chunks]),
+            metadatas=[{"doc": c.doc, "section": c.section, "updated": c.updated, "title": c.title}
+                       for c in chunks])
         return len(chunks)
 
     def search(self, query: str, k: int | None = None) -> list[dict]:
@@ -60,7 +62,7 @@ class Retriever:
         for text, meta, dist in zip(res["documents"][0], res["metadatas"][0],
                                     res["distances"][0], strict=True):
             vec = 1.0 - dist                       # cosine distance to similarity
-            kw = keyword_score(query, text)
+            kw = keyword_score(query, f"{meta.get('title', '')} {meta['section']} {text}")
             hits.append({**meta, "text": text, "vector": round(vec, 3), "keyword": round(kw, 3),
                          "score": round(0.6 * vec + 0.4 * kw, 3)})
         hits.sort(key=lambda h: h["score"], reverse=True)
