@@ -60,3 +60,24 @@ def test_companies_are_isolated(tmp_path):
     make(tmp_path)
     other = Retriever(embedder=HashEmbedder(), path=str(tmp_path), company="other")
     assert other.search("encryption") == []
+
+
+# ---- the index never goes stale ----
+
+def test_ensure_index_rebuilds_only_when_docs_or_embedder_change(tmp_path, monkeypatch):
+    import shutil
+
+    from agents.rfp import ingest, settings
+    docs = tmp_path / "docs"
+    shutil.copytree("data/rfp", docs)
+    monkeypatch.setattr(settings, "EMBEDDER", "hash")
+    r = Retriever(embedder=HashEmbedder(), path=str(tmp_path / "idx"), company="t")
+    fp = tmp_path / "t.fingerprint"
+
+    assert ingest.ensure_index(r, str(docs), fp) is True       # first use builds it
+    assert ingest.ensure_index(r, str(docs), fp) is False      # unchanged: no rebuild
+    (docs / "uptime_sla.md").write_text("# Uptime\nLast updated: 2026-01-01\n\n## Commitments\n99.99 percent\n")
+    assert ingest.ensure_index(r, str(docs), fp) is True       # a doc changed
+    assert "99.99" in " ".join(h["text"] for h in r.search("uptime commitments"))
+    monkeypatch.setattr(settings, "EMBEDDER", "local")
+    assert ingest.ensure_index(r, str(docs), fp) is True       # embedding model switched

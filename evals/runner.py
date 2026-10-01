@@ -31,8 +31,8 @@ from evals import checks as eval_checks
 from evals.checks import evaluate
 
 # Settings that change agent behavior without changing any file. They go into the cache key.
-BEHAVIOR_ENV = ["DECIDER", "COMPANY", "EMBEDDER", "RFP_MIN_SCORE", "RFP_TOP_K", "RFP_DATA_DIR",
-                "AGENT_MAX_STEPS", "AGENT_MAX_TOKENS"]
+BEHAVIOR_ENV = ["DECIDER", "DECIDER_CLAUDE_MODEL", "RFP_INJECTION_ACTION", "COMPANY", "EMBEDDER",
+                "RFP_MIN_SCORE", "RFP_TOP_K", "RFP_DATA_DIR", "AGENT_MAX_STEPS", "AGENT_MAX_TOKENS"]
 
 
 def load_cases(name: str) -> list[dict]:
@@ -108,8 +108,11 @@ def main(argv=None) -> int:
             cached = result is not None
             if not cached:
                 try:
-                    result = run_agent(module.SYSTEM, user_message, module.registry,
-                                       stop_after_tool=stop_tool)
+                    if hasattr(module, "run_case"):   # agents with a triage step run the whole question
+                        result = module.run_case(case)
+                    else:
+                        result = run_agent(module.SYSTEM, user_message, module.registry,
+                                           stop_after_tool=stop_tool)
                     cache.put(k, result)   # saved at once, so a crash later never loses paid results
                 except Exception as e:     # one broken run becomes a failed row, not a dead eval
                     result = {"answer": "", "steps": 0, "cost_usd": 0.0, "run_id": None,

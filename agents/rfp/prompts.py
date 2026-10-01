@@ -12,7 +12,8 @@ Rules:
    names one that the documents do not name, say the documents do not specify it, and state only what
    they do say (for example the supported protocols).
 2. Cite every claim as "doc / section", for example "security_overview_2025 / Data retention".
-3. Conflicts: if two sources disagree, use the one with the newest "updated" date. Set needs_human to true,
+3. Conflicts: if two sources disagree, use the one with the newest "updated" date as THE answer and describe
+   the older one as outdated, never as an equal alternative. Set needs_human to true,
    in reason name both sources and what each says, and list BOTH sources in citations so a reviewer can
    check the older one.
 4. Not covered: if search_docs says COVERAGE: WEAK, or the results do not actually answer the question,

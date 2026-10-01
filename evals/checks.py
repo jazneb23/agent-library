@@ -29,20 +29,28 @@ def judge(answer: str, rubric: str, client=None) -> tuple[bool, str]:
     wrong too, so use it sparingly and read its reasons."""
     # Identical answer and rubric get the identical verdict for free. Skipped when a client is
     # passed in (tests), so tests never touch the disk cache.
-    k = cache.key("judge", config.JUDGE_MODEL, rubric, answer) if client is None else None
+    # "v2": verdicts cached before the thinking fix could be cut off, so they are not reused.
+    k = cache.key("judge", "v2", config.JUDGE_MODEL, rubric, answer) if client is None else None
     if k and (hit := cache.get(k)):
         return hit["ok"], hit["text"]
     client = client or config.get_client()
-    response = client.messages.create(
-        model=config.JUDGE_MODEL, max_tokens=200,
-        system="You grade AI outputs. Reply with PASS or FAIL, then a colon, then one short reason.",
-        messages=[{"role": "user", "content": f"Rubric: {rubric}\n\nOutput to grade:\n{answer}"}])
+    args = dict(model=config.JUDGE_MODEL, max_tokens=300,
+                system="You grade AI outputs. Reply with PASS or FAIL, then a colon, then one short reason.",
+                messages=[{"role": "user", "content": f"Rubric: {rubric}\n\nOutput to grade:\n{answer}"}])
+    try:
+        # This model thinks by default and spent the whole token budget on it, leaving an empty or
+        # cut off verdict. A grader does not need to think out loud, so turn it off.
+        response = client.messages.create(**args, thinking={"type": "between_tools"})
+    except Exception as e:
+        if "thinking" not in str(e).lower():
+            raise
+        response = client.messages.create(**args)   # a model that does not use this setting
     JUDGE_STATS["calls"] += 1
     JUDGE_STATS["usd"] += config.cost_usd(response.usage.input_tokens, response.usage.output_tokens,
                                           config.JUDGE_MODEL)
     text = "".join(b.text for b in response.content if b.type == "text").strip()
-    if not text:   # an empty reply is a judge failure, not a verdict. Never cache it.
-        return False, "judge returned an empty reply (not cached, rerun to re-judge)"
+    if response.stop_reason == "max_tokens" or not text:   # not a verdict. Report it, never cache it.
+        return False, "judge reply was empty or cut off (not cached, rerun to re-judge)"
     ok = text.upper().startswith("PASS")
     if k:
         cache.put(k, {"ok": ok, "text": text})

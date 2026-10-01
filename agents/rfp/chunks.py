@@ -3,6 +3,7 @@
 Retrieval works on chunks, not whole docs, so the agent reads only the part that
 matters and can cite it. Every chunk keeps its doc name and last updated date,
 which is what lets the agent prefer the newer of two conflicting docs."""
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +55,15 @@ def parse_doc(path: Path) -> list[Chunk]:
             buf.append(line)
     flush()
     return chunks
+
+
+def docs_fingerprint(data_dir: str) -> str:
+    """Hash of every doc's name and content. If it changes, the search index is out of date."""
+    h = hashlib.sha256()
+    for path in sorted(Path(data_dir).glob("*.md")):
+        h.update(path.name.encode())
+        h.update(path.read_bytes())
+    return h.hexdigest()[:16]
 
 
 def load_chunks(data_dir: str) -> list[Chunk]:

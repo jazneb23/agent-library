@@ -63,8 +63,8 @@ def test_empty_judge_reply_is_reported_not_cached(tmp_path, monkeypatch):
     monkeypatch.setenv("EVAL_CACHE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "get_client", lambda: FakeClient([text_response("")]))
     ok, detail = checks.judge("answer", "rubric")
-    assert not ok and "empty reply" in detail
-    assert cache.get(cache.key("judge", config.JUDGE_MODEL, "rubric", "answer")) is None
+    assert not ok and "empty or cut off" in detail
+    assert cache.get(cache.key("judge", "v2", config.JUDGE_MODEL, "rubric", "answer")) is None
 
 
 def test_cost_uses_the_right_price_per_model(monkeypatch):
@@ -79,3 +79,35 @@ def test_cost_uses_the_right_price_per_model(monkeypatch):
 def test_judge_is_pluggable():
     out = evaluate(R, {"judge_rubric": "x"}, judge_fn=lambda a, r: (True, "PASS: fine"))
     assert out[0].passed
+
+
+def test_judge_turns_thinking_off_and_never_caches_a_cut_off_reply(tmp_path, monkeypatch):
+    from evals import cache, checks
+    from tests.fakes import FakeClient, text_response
+    monkeypatch.setenv("EVAL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(checks.config, "get_client", lambda: client)
+
+    cut_off = text_response("FAIL: The output corre")
+    cut_off.stop_reason = "max_tokens"
+    client = FakeClient([cut_off])
+    ok, detail = checks.judge("a", "r")
+    assert not ok and "cut off" in detail
+    assert client.calls[0]["thinking"] == {"type": "between_tools"}
+    assert cache.get(cache.key("judge", "v2", checks.config.JUDGE_MODEL, "r", "a")) is None   # not cached
+
+    client2 = FakeClient([text_response("PASS: fine")])
+    monkeypatch.setattr(checks.config, "get_client", lambda: client2)
+    assert checks.judge("a", "r") == (True, "PASS: fine")
+
+
+def test_judge_falls_back_for_a_model_that_rejects_the_thinking_setting(monkeypatch):
+    from evals import checks
+    from tests.fakes import FakeClient, text_response
+
+    class Picky(FakeClient):
+        def create(self, **kw):
+            if "thinking" in kw:
+                raise ValueError("thinking is not supported on this model")
+            return super().create(**kw)
+
+    assert checks.judge("a", "r", client=Picky([text_response("PASS: ok")]))[0] is True
