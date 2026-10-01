@@ -4,3 +4,4 @@ pandas>=2.0
 mcp>=1.0
 chromadb>=0.5
 fastembed>=0.3
+typesafe-sdk>=0.1
