@@ -80,6 +80,8 @@ def validate(questions: dict[str, Question], out: dict[str, Decision]) -> None:
         if name not in out:
             raise ValueError(f"Missing answer for question '{name}'")
         d = out[name]
+        if d.value is None:
+            raise ValueError(f"'{name}': the model returned no value")
         if isinstance(q, Choice) and d.value not in q.options:
             raise ValueError(f"'{name}': {d.value!r} is not one of {q.options}")
         if isinstance(q, Score) and not (0 <= float(d.value) <= len(q.levels) - 1):
@@ -100,25 +102,25 @@ class ClaudeDecider:
         self.model = model or config.MODEL
 
     def _schema(self, questions):
+        """A FLAT schema: one plain field per answer, plus '<name>__confidence' for Choice and
+        Score. Nested objects per question made Haiku drop fields about half the time, so the
+        baseline is kept as simple for the model as it can be."""
+        conf = {"type": "number", "minimum": 0, "maximum": 1,
+                "description": "How sure you are, 0 to 1"}
         props = {}
         for name, q in questions.items():
             if isinstance(q, Choice):
-                props[name] = {"type": "object", "description": q.instructions,
-                               "properties": {"value": {"type": "string", "enum": q.options},
-                                              "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
-                               "required": ["value", "confidence"]}
+                props[name] = {"type": "string", "enum": q.options, "description": q.instructions}
+                props[f"{name}__confidence"] = conf
             elif isinstance(q, Score):
                 levels = ", ".join(f"{i}={lv}" for i, lv in enumerate(q.levels))
-                props[name] = {"type": "object", "description": f"{q.instructions} Levels: {levels}",
-                               "properties": {"value": {"type": "number", "minimum": 0,
-                                                        "maximum": len(q.levels) - 1},
-                                              "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
-                               "required": ["value", "confidence"]}
+                props[name] = {"type": "number", "minimum": 0, "maximum": len(q.levels) - 1,
+                               "description": f"{q.instructions} Levels: {levels}"}
+                props[f"{name}__confidence"] = conf
             else:
-                props[name] = {"type": "object", "description": f"{q.instructions} Give a probability.",
-                               "properties": {"value": {"type": "number", "minimum": 0, "maximum": 1}},
-                               "required": ["value"]}
-        return {"type": "object", "properties": props, "required": list(questions)}
+                props[name] = {"type": "number", "minimum": 0, "maximum": 1,
+                               "description": f"{q.instructions} Give a probability from 0 to 1."}
+        return {"type": "object", "properties": props, "required": list(props)}
 
     def decide(self, state: str, questions: dict[str, Question]) -> dict[str, Decision]:
         client = self._client or config.get_client()
@@ -131,14 +133,18 @@ class ClaudeDecider:
                     "input_schema": self._schema(questions)}],
             tool_choice={"type": "tool", "name": "answer"},
             messages=[{"role": "user", "content": f"STATE:\n{state}"}])
-        record_stats(config.cost_usd(response.usage.input_tokens, response.usage.output_tokens),
+        record_stats(config.cost_usd(response.usage.input_tokens, response.usage.output_tokens, self.model),
                      time.time() - start)
         raw = next(b.input for b in response.content if b.type == "tool_use")
         out = {}
         for name, q in questions.items():
-            item = raw.get(name, {})
+            item = raw.get(name)
+            if isinstance(item, dict):       # tolerate the older nested shape {"value": x, "confidence": y}
+                value, confidence = item.get("value"), item.get("confidence")
+            else:                            # flat shape. A missing confidence counts as not confident.
+                value, confidence = item, raw.get(f"{name}__confidence")
             kind = "choice" if isinstance(q, Choice) else "score" if isinstance(q, Score) else "noul"
-            out[name] = Decision(kind, item.get("value"), item.get("confidence"), self.name)
+            out[name] = Decision(kind, value, confidence, self.name)
         validate(questions, out)
         return out
 
@@ -175,13 +181,16 @@ class CascadeDecider:
 def get_decider(name: str | None = None, client=None) -> Decider:
     """Pick a backend by name or by the DECIDER environment variable: claude, jev, cascade."""
     name = name or os.getenv("DECIDER", "claude")
+    # DECIDER_CLAUDE_MODEL picks the model for the Claude arm and the cascade fallback, for example
+    # a cheaper one while measuring. Unset means the main agent model.
+    model = os.getenv("DECIDER_CLAUDE_MODEL")
     if name == "claude":
-        return ClaudeDecider(client=client)
+        return ClaudeDecider(client=client, model=model)
     if name in ("jev", "cascade"):
         try:
             from core.decisions_jev import JevDecider
         except ImportError as e:
             raise RuntimeError("JevDecider is not installed (core/decisions_jev.py is missing).") from e
         jev = JevDecider()
-        return jev if name == "jev" else CascadeDecider(jev, ClaudeDecider(client=client))
+        return jev if name == "jev" else CascadeDecider(jev, ClaudeDecider(client=client, model=model))
     raise ValueError(f"Unknown decider '{name}'. Use claude, jev, or cascade.")

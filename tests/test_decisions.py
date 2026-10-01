@@ -26,7 +26,15 @@ def test_claude_decider_parses_all_three_types():
     assert out["heat"].value == 2 and out["inject"].confidence is None
     # the forced tool schema must restrict choices to the allowed options
     schema = client.calls[0]["tools"][0]["input_schema"]
-    assert schema["properties"]["route"]["properties"]["value"]["enum"] == ["direct", "not_covered"]
+    assert schema["properties"]["route"]["enum"] == ["direct", "not_covered"]
+    assert "route__confidence" in schema["properties"]   # flat: one plain field per answer
+
+
+def test_claude_decider_parses_the_flat_shape():
+    client = FakeClient([answer_response({"route": "direct", "route__confidence": 0.9,
+                                          "heat": 2, "heat__confidence": 0.7, "inject": 0.02})])
+    out = ClaudeDecider(client=client).decide("state", Q)
+    assert out["route"].confidence == 0.9 and out["heat"].value == 2 and out["inject"].confidence is None
 
 
 def test_invalid_choice_is_rejected():
